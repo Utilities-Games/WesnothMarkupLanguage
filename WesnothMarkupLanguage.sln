@@ -3,9 +3,14 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WesnothMarkupLanguage", "WesnothMarkupLanguage\WesnothMarkupLanguage.csproj", "{97EF9F42-30E5-408C-80B9-E63ED93D4252}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WesnothMarkupLanguage", "WesnothMarkupLanguage\WesnothMarkupLanguage.csproj", "{97EF9F42-30E5-408C-80B9-E63ED93D4252}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WesnothMarkupLanguage.Test", "WesnothMarkupLanguage.Test\WesnothMarkupLanguage.Test.csproj", "{E4423457-E7FC-4D77-832D-DEED538DB592}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WesnothMarkupLanguage.Test", "WesnothMarkupLanguage.Test\WesnothMarkupLanguage.Test.csproj", "{E4423457-E7FC-4D77-832D-DEED538DB592}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{BA136A46-8E5B-4969-91ED-619ABDF8EBDC}"
+	ProjectSection(SolutionItems) = preProject
+		game_icon.png = game_icon.png
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
