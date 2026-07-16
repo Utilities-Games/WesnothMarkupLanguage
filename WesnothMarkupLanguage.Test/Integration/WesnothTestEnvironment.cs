@@ -11,6 +11,7 @@ namespace WesnothMarkupLanguage.Test.Integration
 
         internal static string? TryGetInstallationPath()
         {
+            DotEnvTestConfiguration.EnsureLoaded();
             string? configured = Environment.GetEnvironmentVariable(InstallationPathVariable);
             if (string.IsNullOrWhiteSpace(configured)) return null;
 
@@ -46,6 +47,7 @@ namespace WesnothMarkupLanguage.Test.Integration
     {
         public InstalledGameFactAttribute()
         {
+            DotEnvTestConfiguration.EnsureLoaded();
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(WesnothTestEnvironment.InstallationPathVariable)))
                 Skip = $"Set {WesnothTestEnvironment.InstallationPathVariable} to run installed-game integration tests.";
         }

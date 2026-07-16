@@ -20,4 +20,8 @@
     <ProjectReference Include="..\WesnothMarkupLanguage\WesnothMarkupLanguage.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('.env')">
+    <None Update=".env" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
 </Project>

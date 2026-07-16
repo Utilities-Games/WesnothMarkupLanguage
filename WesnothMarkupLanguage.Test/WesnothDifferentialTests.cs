@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
+using WesnothMarkupLanguage.Test.Integration;
 
 namespace WesnothMarkupLanguage.Test
 {
@@ -13,9 +14,10 @@ namespace WesnothMarkupLanguage.Test
         [Fact]
         public async Task Output_matches_official_1_18_7_preprocessor_for_reference_fixture()
         {
+            DotEnvTestConfiguration.EnsureLoaded();
             string? executable = Environment.GetEnvironmentVariable("WESNOTH_1_18_7_EXECUTABLE");
             if (string.IsNullOrWhiteSpace(executable)) return;
-            const string input = "#define MAKE ID\n[unit]\nid={ID}\n[/unit]\n#enddef\n#ifdef HARD\n{MAKE hard}\n#else\n{MAKE normal}\n#endif\n";
+            const string input = "#define MAKE ID\n[unit]\nid=\"{ID}\"\n[/unit]\n#enddef\n#ifdef HARD\n{MAKE hard}\n#else\n{MAKE normal}\n#endif\n";
             string root = Path.Combine(Path.GetTempPath(), "wml-differential-" + Guid.NewGuid().ToString("N")); string output = Path.Combine(root, "output"); Directory.CreateDirectory(output); string source = Path.Combine(root, "fixture.cfg"); File.WriteAllText(source, input);
             try
             {

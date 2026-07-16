@@ -63,6 +63,15 @@ $env:WESNOTH_INSTALLATION_PATH = 'I:\SteamLibrary\steamapps\common\wesnoth'
 dotnet test --filter 'Category=InstalledGameIntegration'
 ```
 
+For persistent local configuration, create the ignored file `WesnothMarkupLanguage.Test/.env`:
+
+```dotenv
+WESNOTH_INSTALLATION_PATH=I:\SteamLibrary\steamapps\common\wesnoth
+WESNOTH_1_18_7_EXECUTABLE=I:\SteamLibrary\steamapps\common\wesnoth\wesnoth.exe
+```
+
+Values already supplied by the shell or CI take precedence over `.env` values.
+
 When the installation variable is absent, installed-game integration tests are inert so ordinary builds and pull requests do not depend on a local game installation.
 
 Licensed under the [MIT License](LICENSE).
