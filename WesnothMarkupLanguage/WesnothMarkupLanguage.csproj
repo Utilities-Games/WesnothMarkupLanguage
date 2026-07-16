@@ -1,19 +1,34 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Description>A .NET Core library for parsing WML formatted .cfg files for Battle for Wesnoth.</Description>
+    <LangVersion>latest</LangVersion>
+    <Version>2.0.0-preview.1</Version>
+    <PackageId>WesnothMarkupLanguage</PackageId>
+    <Title>Wesnoth Markup Language</Title>
+    <Authors>tbm0115</Authors>
+    <Company>tbm0115</Company>
+    <Description>A lossless parser, writer, serializer, and sandboxed preprocessor for Battle for Wesnoth WML.</Description>
+    <PackageTags>wesnoth;wml;parser;serializer;preprocessor</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Utilities-Games/WesnothMarkupLanguage</PackageProjectUrl>
     <PackageIcon>game_icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/Utilities-Games/WesnothMarkupLanguage</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Serialization\Schema\" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +37,10 @@
       <PackagePath>\</PackagePath>
     </None>
     <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="..\LICENSE">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>

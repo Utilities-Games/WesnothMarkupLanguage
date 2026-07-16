@@ -1,63 +1,52 @@
-name: Publish to Package Registries
+name: Build, test, and publish
 
-on: 
+on:
   push:
-    branches:
-      - main
-
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build Package
+  validate:
     runs-on: windows-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@main
-      with:
-        dotnet-version: '6.x'
-    - name: Build with dotnet
-      run: dotnet build --configuration Release
-      
-    - name: Pack
-      run: dotnet pack WesnothMarkupLanguage --configuration Release --output ${{ github.workspace }}/artifacts --no-build
-    
-    - name: Publish Artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: nupkg
-        path: ${{ github.workspace }}/artifacts
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore
+      - run: dotnet build --configuration Release --no-restore
+      - run: dotnet test --configuration Release --no-build
+      - name: Pack and smoke test consumers
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '2.0.0-preview.1' }
+          dotnet pack WesnothMarkupLanguage --configuration Release --no-build --output artifacts -p:Version=$version
+          dotnet restore smoke/Modern/Modern.csproj -p:WmlPackageVersion=$version --configfile smoke/NuGet.Config
+          dotnet restore smoke/NetFramework/NetFramework.csproj -p:WmlPackageVersion=$version --configfile smoke/NuGet.Config
+          dotnet build smoke/Modern/Modern.csproj --no-restore -p:WmlPackageVersion=$version
+          dotnet build smoke/NetFramework/NetFramework.csproj --no-restore -p:WmlPackageVersion=$version
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.*nupkg
 
-  deploy:
-    needs: build
-    name: Deploy Packages
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate
     runs-on: windows-latest
-    
+    environment: nuget.org
     steps:
-      - name: Setup .NET Core
-        uses: actions/setup-dotnet@main
+      - uses: actions/download-artifact@v4
         with:
-          dotnet-version: '6.x'
-
-      - name: Download Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: nupkg
-          path: ${{ github.workspace }}/package
-      
-      - name: Setup NuGet
-        uses: NuGet/setup-nuget@main
-        with:
-          nuget-api-key: ${{ secrets.NUGET_API_KEY }}
-          nuget-version: latest
-      
-      - name: Push to NuGet
-        run: dotnet nuget push ${{ github.workspace }}\package\*.nupkg -k ${{ secrets.NUGET_API_KEY }} -s https://nuget.org
-    
-#      - name: Add GitHub Package Registry Source
-#        run: nuget sources Add -Name "GPR" -Source ${{ secrets.GPR_URI }} -UserName ${{ secrets.GPR_USERNAME }} -Password ${{ secrets.GITHUB_TOKEN }}
-    
-#      - name: Push to GitHub Packages
-#        run: nuget push ${{ github.workspace }}\package\*.nupkg -Source "GPR" -SkipDuplicate
+          name: nuget-packages
+          path: artifacts
+      - run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - run: dotnet nuget push "artifacts/*.snupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
