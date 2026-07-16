@@ -26,7 +26,7 @@ jobs:
       - name: Pack and smoke test consumers
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '2.0.0-preview.1' }
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '2.0.0' }
           dotnet pack WesnothMarkupLanguage --configuration Release --no-build --output artifacts -p:Version=$version
           dotnet restore smoke/Modern/Modern.csproj -p:WmlPackageVersion=$version --configfile smoke/NuGet.Config
           dotnet restore smoke/NetFramework/NetFramework.csproj -p:WmlPackageVersion=$version --configfile smoke/NuGet.Config

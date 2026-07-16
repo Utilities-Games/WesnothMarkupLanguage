@@ -2,7 +2,7 @@
 
 A `.NET Standard 2.0` library for reading, writing, preprocessing, and mapping [Battle for Wesnoth](https://www.wesnoth.org/) WML configuration files.
 
-> Version 2 is a breaking redesign. The first package is `2.0.0-preview.1` and targets Wesnoth 1.18.7 behavior.
+> Version 2 is a breaking redesign targeting Wesnoth 1.18.7 behavior.
 
 ## Parse and edit WML
 
@@ -52,7 +52,7 @@ Filesystem includes are restricted to explicit roots and reparse points are reje
 
 ## Status
 
-The preview includes the lossless parser, semantic DOM, canonical writer, POCO serializer, source diagnostics, root-sandboxed resolver, macro expansion, includes, common directives, conditionals, version checks, cycle detection, and resource limits. Compatibility discoveries from real 1.18.7 add-ons will be addressed before stable `2.0.0`.
+Version 2 includes the lossless parser, semantic DOM, canonical writer, POCO serializer, source diagnostics, root-sandboxed resolver, macro expansion, includes, common directives, conditionals, version checks, cycle detection, and resource limits.
 
 ## Test an installed Wesnoth campaign
 
