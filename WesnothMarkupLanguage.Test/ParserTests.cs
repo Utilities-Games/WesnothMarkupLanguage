@@ -56,5 +56,23 @@ namespace WesnothMarkupLanguage.Test
             var tree = WmlParser.Parse(input); var attribute = Assert.Single(tree.Document.Attributes);
             Assert.False(tree.HasErrors); Assert.Equal("ab$suffix", attribute.Value.Text); Assert.Equal(3, attribute.Value.Components.Count);
         }
+
+        [Fact] public void First_additive_tag_creates_an_ordinary_base_with_lossless_spans_and_children()
+        {
+            const string input = "[unit][+modifications] # created from additive\n[object]\nid=probe\n[/object][/modifications][/unit]\n";
+            var tree = WmlParser.Parse(input, "additive.cfg"); var unit = Assert.Single(tree.Document.Tags); var modifications = Assert.Single(unit.Tags); var item = Assert.Single(modifications.Tags);
+            Assert.False(tree.HasErrors); Assert.Equal("modifications", modifications.Name); Assert.False(modifications.IsAmendment); Assert.Equal("probe", item.GetAttribute("id")); Assert.Single(modifications.Children.OfType<WmlComment>());
+            Assert.Equal(input.IndexOf("[+modifications]", System.StringComparison.Ordinal), modifications.Span!.Start); Assert.Equal("[+modifications]".Length, modifications.Span!.Length);
+            Assert.Equal(input.IndexOf("[/modifications]", System.StringComparison.Ordinal), modifications.ClosingSpan!.Start); Assert.DoesNotContain(tree.Diagnostics, d => d.Code == "WML1010");
+            Assert.Equal(input, WmlWriter.Write(tree)); Assert.DoesNotContain("[+modifications]", WmlWriter.Write(tree.Document));
+        }
+
+        [Fact] public void Later_additive_tags_merge_into_the_created_or_existing_base()
+        {
+            const string input = "[unit]\n[+modifications]\nstate=first\n[one][/one]\n[/modifications]\n[+modifications]\nstate=second\nextra=yes\n[two][/two]\n# retained\n[/modifications]\n[/unit]\n";
+            var tree = WmlParser.Parse(input); var modifications = Assert.Single(Assert.Single(tree.Document.Tags).Tags);
+            Assert.False(tree.HasErrors); Assert.False(modifications.IsAmendment); Assert.Equal("second", modifications.GetAttribute("state")); Assert.Equal("yes", modifications.GetAttribute("extra"));
+            Assert.Equal(new[] { "one", "two" }, modifications.Tags.Select(t => t.Name)); Assert.Single(modifications.Children.OfType<WmlComment>()); Assert.DoesNotContain(tree.Diagnostics, d => d.Code == "WML1010");
+        }
     }
 }

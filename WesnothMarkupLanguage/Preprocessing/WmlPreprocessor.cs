@@ -160,16 +160,17 @@ namespace WesnothMarkupLanguage
             private async Task<string> ExpandMacroAsync(WmlMacroDefinition macro, List<string> arguments, string? source, int includeDepth, int depth)
             {
                 if (depth > _options.MaxMacroExpansionDepth) { Error("WML2002", "Maximum macro expansion depth exceeded.", source); return string.Empty; }
-                string body = macro.Body; var values = new Dictionary<string, string>(StringComparer.Ordinal); foreach (var item in macro.OptionalArguments) values[item.Key] = item.Value; int positional = 0;
+                string body = macro.Body; var values = new Dictionary<string, string>(StringComparer.Ordinal); foreach (var item in macro.OptionalArguments) values[item.Key] = item.Value; int positional = 0; var explicitlyNamed = new HashSet<string>(StringComparer.Ordinal);
                 foreach (string argument in arguments)
                 {
                     string value = argument;
                     if (TryUnwrapGroupedArgument(argument, out var grouped))
                     {
                         int equals = FindArgumentEquals(grouped); string candidate = equals > 0 ? grouped.Substring(0, equals).Trim() : string.Empty;
-                        if (equals > 0 && IsSymbol(candidate)) { values[candidate] = grouped.Substring(equals + 1); continue; }
+                        if (equals > 0 && IsSymbol(candidate) && (macro.Parameters.Contains(candidate) || macro.OptionalArguments.ContainsKey(candidate))) { values[candidate] = grouped.Substring(equals + 1); explicitlyNamed.Add(candidate); continue; }
                         value = grouped;
                     }
+                    while (positional < macro.Parameters.Count && explicitlyNamed.Contains(macro.Parameters[positional])) positional++;
                     if (positional < macro.Parameters.Count) values[macro.Parameters[positional++]] = value;
                 }
                 foreach (string parameter in macro.Parameters) if (!values.ContainsKey(parameter)) values[parameter] = string.Empty;

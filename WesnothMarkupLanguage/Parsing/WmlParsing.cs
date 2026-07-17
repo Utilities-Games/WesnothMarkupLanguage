@@ -70,7 +70,7 @@ namespace WesnothMarkupLanguage
                     var opened = stack.Pop();
                     opened.ClosingSpan = span;
                     if (!string.Equals(opened.Name, closing, StringComparison.Ordinal)) diagnostics.Add(Diagnostic("WML1004", $"Closing tag [/{closing}] does not match [{opened.Name}].", source, span.Start, span.Length, line, column));
-                    if (opened.IsAmendment) ApplyAmendment(opened, doc, stack, diagnostics, span);
+                    if (opened.IsAmendment) ApplyAmendment(opened, doc, stack);
                     return;
                 }
                 bool amendment = name.StartsWith("+", StringComparison.Ordinal);
@@ -101,12 +101,12 @@ namespace WesnothMarkupLanguage
             diagnostics.Add(Diagnostic("WML1007", "Unrecognized WML statement.", source, span.Start, span.Length, line, column));
         }
 
-        private static void ApplyAmendment(WmlTag amendment, WmlDocument doc, Stack<WmlTag> stack, List<WmlDiagnostic> diagnostics, WmlSourceSpan span)
+        private static void ApplyAmendment(WmlTag amendment, WmlDocument doc, Stack<WmlTag> stack)
         {
             IList<WmlNode> siblings = stack.Count == 0 ? doc.Children : stack.Peek().Children;
             WmlTag? target = null;
             for (int i = siblings.Count - 1; i >= 0; i--) if (siblings[i] is WmlTag t && t.Name == amendment.Name) { target = t; break; }
-            if (target == null) { diagnostics.Add(new WmlDiagnostic("WML1010", $"No prior [{amendment.Name}] exists for amendment.", WmlDiagnosticSeverity.Error, span)); return; }
+            if (target == null) { amendment.IsAmendment = false; Add(amendment, doc, stack); return; }
             foreach (var child in amendment.Children)
             {
                 if (child is WmlAttribute a)

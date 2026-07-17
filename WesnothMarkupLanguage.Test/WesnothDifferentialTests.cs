@@ -86,5 +86,26 @@ namespace WesnothMarkupLanguage.Test
             }
             finally { Directory.Delete(root, true); }
         }
+
+        [Fact]
+        public async Task Grouped_attribute_arguments_and_first_additive_tags_match_official_1_18_7()
+        {
+            DotEnvTestConfiguration.EnsureLoaded();
+            string? executable = Environment.GetEnvironmentVariable("WESNOTH_1_18_7_EXECUTABLE");
+            if (string.IsNullOrWhiteSpace(executable)) return;
+            const string input = "#define WRAP FILTER VALUE\n[event]\n[filter]\n{FILTER}\n[/filter]\nvalue={VALUE}\n[/event]\n#enddef\n{WRAP (id=probe) 7}\n[unit]\n[+modifications]\n[object]\nid=probe\n[/object]\n[/modifications]\n[/unit]\n";
+            string root = Path.Combine(Path.GetTempPath(), "wml-differential-binding-" + Guid.NewGuid().ToString("N")); string output = Path.Combine(root, "output"); Directory.CreateDirectory(output); string source = Path.Combine(root, "fixture.cfg"); File.WriteAllText(source, input);
+            try
+            {
+                var start = new ProcessStartInfo(executable!, $"--preprocess \"{source}\" \"{output}\"") { UseShellExecute = false, RedirectStandardError = true, CreateNoWindow = true };
+                using var process = Process.Start(start)!; await process.WaitForExitAsync(); string stderr = await process.StandardError.ReadToEndAsync(); Assert.True(process.ExitCode == 0, stderr);
+                string officialFile = Directory.GetFiles(output, "*.cfg").Single(); var official = WmlParser.Parse(File.ReadAllText(officialFile)); var ours = await WmlPreprocessor.ProcessAsync(input, sourceName: source);
+                var officialEvent = official.Document.Tags.Single(t => t.Name == "event"); var oursEvent = ours.Syntax.Document.Tags.Single(t => t.Name == "event");
+                Assert.False(ours.HasErrors); Assert.Equal(officialEvent.GetAttribute("value"), oursEvent.GetAttribute("value")); Assert.Equal(Assert.Single(officialEvent.Tags).GetAttribute("id"), Assert.Single(oursEvent.Tags).GetAttribute("id"));
+                var officialUnit = official.Document.Tags.Single(t => t.Name == "unit"); var oursUnit = ours.Syntax.Document.Tags.Single(t => t.Name == "unit");
+                Assert.Equal(Assert.Single(Assert.Single(officialUnit.Tags).Tags).GetAttribute("id"), Assert.Single(Assert.Single(oursUnit.Tags).Tags).GetAttribute("id"));
+            }
+            finally { Directory.Delete(root, true); }
+        }
     }
 }

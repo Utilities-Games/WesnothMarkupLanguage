@@ -164,6 +164,41 @@ namespace WesnothMarkupLanguage.Test
             Assert.Contains(result.SourceMap, entry => entry.Source == "macros.cfg" && entry.OutputStart <= insertion && entry.OutputStart + entry.OutputLength >= insertion + 4);
         }
 
+        [Fact] public async Task Binds_unknown_grouped_attribute_assignment_positionally_without_shifting()
+        {
+            const string input = "#define WRAP FILTER VALUE\n[event]\n[filter]\n{FILTER}\n[/filter]\nvalue={VALUE}\n[/event]\n#enddef\n{WRAP (id=probe) 7}\n";
+            var result = await WmlPreprocessor.ProcessAsync(input); var action = Assert.Single(result.Syntax.Document.Tags); var filter = Assert.Single(action.Tags);
+            Assert.False(result.HasErrors); Assert.Equal("probe", filter.GetAttribute("id")); Assert.Equal("7", action.GetAttribute("value")); Assert.DoesNotContain(result.Syntax.Diagnostics, d => d.Code == "WML1007");
+        }
+
+        [Fact] public async Task Named_formals_and_optional_arguments_do_not_shift_positional_binding()
+        {
+            const string definitions = "#define BIND FIRST SECOND\n#arg OPTIONAL\ndefault\n#endarg\n[result]\nfirst={FIRST}\nsecond={SECOND}\noptional={OPTIONAL}\n[/result]\n#enddef\n";
+            var namedFirst = await WmlPreprocessor.ProcessAsync(definitions + "{BIND (SECOND=two) one (OPTIONAL=custom)}\n"); var first = Assert.Single(namedFirst.Syntax.Document.Tags);
+            Assert.False(namedFirst.HasErrors); Assert.Equal("one", first.GetAttribute("first")); Assert.Equal("two", first.GetAttribute("second")); Assert.Equal("custom", first.GetAttribute("optional"));
+            var overrideEarlier = await WmlPreprocessor.ProcessAsync(definitions + "{BIND one (FIRST=override) two}\n"); var second = Assert.Single(overrideEarlier.Syntax.Document.Tags);
+            Assert.False(overrideEarlier.HasErrors); Assert.Equal("override", second.GetAttribute("first")); Assert.Equal("two", second.GetAttribute("second"));
+        }
+
+        [Fact] public async Task Preserves_multiline_nested_and_quoted_equals_in_positional_groups()
+        {
+            const string input = "#define INNER VALUE\n{VALUE}#enddef\n#define WRAP FILTER VALUE\n[event]\n[filter]\n{FILTER}\n[/filter]\nvalue={VALUE}\n[/event]\n#enddef\n{WRAP (text=\"{INNER a=b}\"\nkind=probe) 7}\n";
+            var result = await WmlPreprocessor.ProcessAsync(input); var action = Assert.Single(result.Syntax.Document.Tags); var filter = Assert.Single(action.Tags);
+            Assert.False(result.HasErrors); Assert.Equal("a=b", filter.GetAttribute("text")); Assert.Equal("probe", filter.GetAttribute("kind")); Assert.Equal("7", action.GetAttribute("value"));
+        }
+
+        [Fact] public async Task Grouped_positional_substitution_retains_definition_and_invocation_provenance()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["macros.cfg"] = new WmlSource("macros.cfg", "#define WRAP FILTER VALUE\n[event]\n[filter]\n{FILTER}\n[/filter]\nvalue={VALUE}\n[/event]\n#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{macros.cfg}\n{WRAP (id=probe) 7}\n", options, "main.cfg"); int insertion = result.Text.IndexOf("id=probe", System.StringComparison.Ordinal);
+            Assert.False(result.HasErrors); Assert.True(insertion >= 0); Assert.Contains(result.SourceMap, entry => entry.Source == "macros.cfg" && entry.OutputStart <= insertion && entry.OutputStart + entry.OutputLength >= insertion + 8);
+            Assert.Contains(result.SourceMap, entry => entry.Source == "main.cfg" && entry.OutputStart <= insertion && entry.OutputStart + entry.OutputLength >= insertion + 8);
+        }
+
         [Fact] public async Task Shifts_embedded_macro_source_map_entries_to_their_output_offsets()
         {
             var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
