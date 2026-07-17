@@ -47,5 +47,24 @@ namespace WesnothMarkupLanguage.Test
             }
             finally { Directory.Delete(root, true); }
         }
+
+        [Fact]
+        public async Task Multiline_strong_quotes_and_nested_arguments_match_official_1_18_7()
+        {
+            DotEnvTestConfiguration.EnsureLoaded();
+            string? executable = Environment.GetEnvironmentVariable("WESNOTH_1_18_7_EXECUTABLE");
+            if (string.IsNullOrWhiteSpace(executable)) return;
+            const string input = "#define INNER VALUE\n{VALUE}#enddef\n#define OUTER VALUE\n[fixture]\nnested={VALUE}\ncode=<<\nlocal probe = { id = \"probe\", location = { x = 1 } }\nformula = $(items[{index}])\n>>\n[/fixture]\n#enddef\n{OUTER {INNER 2}}\n";
+            string root = Path.Combine(Path.GetTempPath(), "wml-differential-nested-" + Guid.NewGuid().ToString("N")); string output = Path.Combine(root, "output"); Directory.CreateDirectory(output); string source = Path.Combine(root, "fixture.cfg"); File.WriteAllText(source, input);
+            try
+            {
+                var start = new ProcessStartInfo(executable!, $"--preprocess \"{source}\" \"{output}\"") { UseShellExecute = false, RedirectStandardError = true, CreateNoWindow = true };
+                using var process = Process.Start(start)!; await process.WaitForExitAsync(); string stderr = await process.StandardError.ReadToEndAsync(); Assert.True(process.ExitCode == 0, stderr);
+                string officialFile = Directory.GetFiles(output, "*.cfg").Single(); var ours = await WmlPreprocessor.ProcessAsync(input, sourceName: source);
+                var officialTag = Assert.Single(WmlParser.Parse(File.ReadAllText(officialFile)).Document.Tags); var oursTag = Assert.Single(ours.Syntax.Document.Tags);
+                Assert.Equal(officialTag.GetAttribute("nested"), oursTag.GetAttribute("nested")); Assert.Equal(officialTag.GetAttribute("code"), oursTag.GetAttribute("code"));
+            }
+            finally { Directory.Delete(root, true); }
+        }
     }
 }

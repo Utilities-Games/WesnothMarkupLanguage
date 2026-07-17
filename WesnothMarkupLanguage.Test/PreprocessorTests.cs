@@ -85,6 +85,51 @@ namespace WesnothMarkupLanguage.Test
             Assert.False(result.HasErrors); Assert.Contains("<<prefix-{WORD middle}-suffix>>", result.Text);
         }
 
+        [Fact] public async Task Preserves_multiline_strong_quoted_braces_and_resumes_expansion_after_closing()
+        {
+            const string literal = "<<\nlocal probe = { id = \"probe\", location = { x = 1 } }\nformula = $(items[{index}])\n#not-a-directive {ignored value}\n>>";
+            const string input = "#define WORD VALUE\n{VALUE}#enddef\n[lua]\ncode=" + literal + " + \"-{WORD expanded}\"\n[/lua]\n";
+            var resolver = new RecordingResolver(); var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync(input, options, "fixture.cfg");
+            Assert.False(result.HasErrors); Assert.Contains(literal + " + \"-expanded\"", result.Text); Assert.Empty(resolver.Requests);
+            Assert.DoesNotContain(result.Diagnostics, d => d.Code == "WML2009" || d.Code == "WML2011" || d.Code == "WML2012" || d.Code == "WML2014");
+            int brace = result.Text.IndexOf("{ id =", System.StringComparison.Ordinal); Assert.True(brace >= 0);
+            Assert.Contains(result.SourceMap, entry => entry.Source == "fixture.cfg" && entry.OutputStart <= brace && entry.OutputStart + entry.OutputLength > brace);
+        }
+
+        [Fact] public async Task Expands_registered_macros_passed_as_nested_arguments()
+        {
+            const string input = "#define INNER VALUE\n{VALUE}#enddef\n#define OUTER VALUE\n[scenario]\nturns={VALUE}\n[/scenario]\n#enddef\n{OUTER {INNER 2}}\n";
+            var result = await WmlPreprocessor.ProcessAsync(input);
+            Assert.False(result.HasErrors); Assert.Equal("2", Assert.Single(result.Syntax.Document.Tags).GetAttribute("turns")); Assert.DoesNotContain(result.Diagnostics, d => d.Code == "WML2009");
+        }
+
+        [Theory]
+        [InlineData("{OUTER {MIDDLE {INNER 2}}}", "2")]
+        [InlineData("{OUTER {INNER \"two words\"}}", "two words")]
+        [InlineData("{OUTER (VALUE={INNER 2})}", "2")]
+        [InlineData("{OUTER\n {INNER 2}\n}", "2")]
+        public async Task Retains_nested_macro_argument_boundaries(string invocation, string expected)
+        {
+            const string definitions = "#define INNER VALUE\n{VALUE}#enddef\n#define MIDDLE VALUE\n{VALUE}#enddef\n#define OUTER VALUE\nvalue={VALUE}\n#enddef\n";
+            var result = await WmlPreprocessor.ProcessAsync(definitions + invocation + "\n");
+            Assert.False(result.HasErrors); Assert.Equal("value=" + (invocation.Contains("\"") ? "\"" + expected + "\"" : expected) + "\n\n", result.Text);
+        }
+
+        [Fact] public async Task Preserves_nested_macro_source_map_provenance_and_offsets()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["inner.cfg"] = new WmlSource("inner.cfg", "#define INNER VALUE\n{VALUE}#enddef\n"),
+                ["outer.cfg"] = new WmlSource("outer.cfg", "#define OUTER VALUE\n{VALUE}#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{inner.cfg}\n{outer.cfg}\nvalue=prefix-{OUTER {INNER 2}}-suffix\n", options, "main.cfg");
+            int insertion = result.Text.IndexOf("2", System.StringComparison.Ordinal);
+            Assert.False(result.HasErrors); Assert.True(insertion >= 0); Assert.Equal(new[] { "inner.cfg", "outer.cfg" }, resolver.Requests);
+            Assert.Contains(result.SourceMap, entry => entry.Source == "inner.cfg" && entry.OutputStart == insertion && entry.OutputLength == 1);
+        }
+
         [Fact] public async Task Shifts_embedded_macro_source_map_entries_to_their_output_offsets()
         {
             var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
