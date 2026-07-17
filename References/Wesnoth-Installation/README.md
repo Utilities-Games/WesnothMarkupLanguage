@@ -1,0 +1,20 @@
+# Local Wesnoth installation
+
+Copy or link the contents of a local Battle for Wesnoth installation into this directory. The campaign validator requires at least:
+
+- `data/core/_main.cfg` and the rest of `data/core`
+- `data/campaigns/<CampaignName>/_main.cfg` and the selected campaign files
+
+Fonts, images, and sounds may be retained for other local workflows, but the validator reads WML configuration only. The game-data subdirectories are intentionally ignored by Git so builds and GitHub Actions never depend on licensed local installation content.
+
+From the repository root, run:
+
+```powershell
+.\scripts\Validate-WesnothCampaigns.ps1 -Campaign Heir_To_The_Throne
+.\scripts\Validate-WesnothCampaigns.ps1 -Campaign tutorial,Sceptre_of_Fire
+.\scripts\Validate-WesnothCampaigns.ps1 -All
+```
+
+Use `-InstallationRoot` when the game files remain elsewhere. Reports default to `artifacts/validation/campaign-validation.json`; see the main README for report fields, options, statuses, and exit codes.
+
+`-All` includes every `_main.cfg` folder under `data/campaigns`. Multiplayer/resource-only folders without ordinary `[campaign]` metadata are reported as `VAL1001` validation failures rather than silently skipped.

@@ -24,14 +24,18 @@ namespace WesnothMarkupLanguage
             if (File.Exists(resolved)) return new WmlSource(resolved, await ReadAsync(resolved, cancellationToken).ConfigureAwait(false));
             if (!Directory.Exists(resolved)) return null;
             var files = SelectDirectoryFiles(resolved); var builder = new StringBuilder(); foreach (string file in files) { EnsureSafe(file); builder.Append(await ReadAsync(file, cancellationToken).ConfigureAwait(false)); }
-            return new WmlSource(resolved, builder.ToString());
+            string directorySource = resolved.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return new WmlSource(directorySource, builder.ToString());
         }
         public Task<bool> ExistsAsync(string path, string? includingSource, CancellationToken cancellationToken)
         { string? resolved = ResolvePath(path, includingSource); return Task.FromResult(resolved != null && (File.Exists(resolved) || Directory.Exists(resolved))); }
         private string? ResolvePath(string path, string? includingSource)
         {
             var candidates = new List<string>(); if (Path.IsPathRooted(path)) candidates.Add(path); else { if (includingSource != null && Path.IsPathRooted(includingSource)) candidates.Add(Path.Combine(Path.GetDirectoryName(includingSource) ?? "", path)); foreach (var root in _roots) candidates.Add(Path.Combine(root, path)); }
-            foreach (var candidate in candidates) { string full = Path.GetFullPath(candidate); if (_roots.Any(root => full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(full + Path.DirectorySeparatorChar, root, StringComparison.OrdinalIgnoreCase))) return full; }
+            var safeCandidates = new List<string>();
+            foreach (var candidate in candidates) { string full = Path.GetFullPath(candidate); if (_roots.Any(root => full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || string.Equals(full + Path.DirectorySeparatorChar, root, StringComparison.OrdinalIgnoreCase))) safeCandidates.Add(full); }
+            foreach (var candidate in safeCandidates) if (File.Exists(candidate) || Directory.Exists(candidate)) return candidate;
+            if (safeCandidates.Count > 0) return safeCandidates[0];
             throw new UnauthorizedAccessException($"Path '{path}' is outside the configured WML roots.");
         }
         private void EnsureSafe(string path)

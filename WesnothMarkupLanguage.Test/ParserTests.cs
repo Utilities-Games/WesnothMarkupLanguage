@@ -33,6 +33,14 @@ namespace WesnothMarkupLanguage.Test
             var tree = WmlParser.Parse(input); Assert.False(tree.HasErrors); Assert.Equal(roots, tree.Document.Tags.Count()); Assert.All(tree.Document.FindTags("inner"), tag => Assert.NotNull(tag.ClosingSpan));
         }
 
+        [Fact] public void Tokenizes_tag_after_attribute_on_the_same_line()
+        {
+            const string input = "[part]\nshow_title=yes         [image]\nfile=\"misc/[not-a-tag].png\"\n[/image]\n[/part]\n";
+            var tree = WmlParser.Parse(input, "same-line-attribute.cfg"); var part = Assert.Single(tree.Document.Tags); var image = Assert.Single(part.Tags);
+            Assert.False(tree.HasErrors); Assert.Equal("yes", part.GetAttribute("show_title")); Assert.Equal("image", image.Name); Assert.Equal("misc/[not-a-tag].png", image.GetAttribute("file"));
+            Assert.Equal(input.IndexOf("[image]", System.StringComparison.Ordinal), image.Span!.Start); Assert.Equal(input, WmlWriter.Write(tree));
+        }
+
         [Fact] public void Same_line_mismatch_uses_the_individual_closing_token_span()
         {
             const string input = "[outer][inner][/outer]"; var tree = WmlParser.Parse(input, "mismatch.cfg"); var diagnostic = Assert.Single(tree.Diagnostics, d => d.Code == "WML1004");

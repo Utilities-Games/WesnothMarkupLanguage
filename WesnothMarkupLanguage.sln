@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WesnothMarkupLanguage", "We
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WesnothMarkupLanguage.Test", "WesnothMarkupLanguage.Test\WesnothMarkupLanguage.Test.csproj", "{E4423457-E7FC-4D77-832D-DEED538DB592}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WesnothMarkupLanguage.CampaignValidator", "WesnothMarkupLanguage.CampaignValidator\WesnothMarkupLanguage.CampaignValidator.csproj", "{8C53A606-EB73-41F3-8F59-E45413A8B5E7}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{BA136A46-8E5B-4969-91ED-619ABDF8EBDC}"
 	ProjectSection(SolutionItems) = preProject
 		game_icon.png = game_icon.png
@@ -26,6 +28,10 @@ Global
 		{E4423457-E7FC-4D77-832D-DEED538DB592}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E4423457-E7FC-4D77-832D-DEED538DB592}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E4423457-E7FC-4D77-832D-DEED538DB592}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C53A606-EB73-41F3-8F59-E45413A8B5E7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C53A606-EB73-41F3-8F59-E45413A8B5E7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C53A606-EB73-41F3-8F59-E45413A8B5E7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C53A606-EB73-41F3-8F59-E45413A8B5E7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -3,6 +3,12 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# Ignore Wesnoth-Installation
+[Rr]eferences/[Ww]esnoth-[Ii]nstallation/[Dd]ata/
+[Rr]eferences/[Ww]esnoth-[Ii]nstallation/[Ff]onts/
+[Rr]eferences/[Ww]esnoth-[Ii]nstallation/[Ii]mages/
+[Rr]eferences/[Ww]esnoth-[Ii]nstallation/[Ss]ounds/
+
 # User-specific files
 *.rsuser
 *.suo

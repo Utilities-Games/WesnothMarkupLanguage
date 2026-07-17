@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WesnothMarkupLanguage\WesnothMarkupLanguage.csproj" />
+    <ProjectReference Include="..\WesnothMarkupLanguage.CampaignValidator\WesnothMarkupLanguage.CampaignValidator.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('.env')">

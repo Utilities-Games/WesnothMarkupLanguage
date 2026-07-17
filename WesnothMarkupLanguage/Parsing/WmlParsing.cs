@@ -42,6 +42,11 @@ namespace WesnothMarkupLanguage
                     int close = raw.IndexOf(']', position); if (close < 0) { ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return; }
                     ParseStatement(raw.Substring(position, close - position + 1), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); position = close + 1; continue;
                 }
+                int nextTag = FindNextTagStart(raw, position + 1);
+                if (nextTag >= 0)
+                {
+                    ParseStatement(raw.Substring(position, nextTag - position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); position = nextTag; continue;
+                }
                 ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return;
             }
         }
@@ -166,6 +171,25 @@ namespace WesnothMarkupLanguage
             var result = new List<string>(); int start = 0, offset = 0;
             while (offset <= text.Length) { int found = FindOutside(text.Substring(offset), separator); if (found < 0) break; found += offset; result.Add(text.Substring(start, found - start)); start = found + 1; offset = start; }
             result.Add(text.Substring(start)); return result;
+        }
+        private static int FindNextTagStart(string text, int start)
+        {
+            bool quote = false, raw = false;
+            for (int i = start; i < text.Length; i++)
+            {
+                if (!quote && !raw && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; }
+                if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
+                if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; continue; }
+                if (!quote && !raw && text[i] == '[' && IsTagStart(text, i) && (i == 0 || char.IsWhiteSpace(text[i - 1]))) return i;
+            }
+            return -1;
+        }
+        private static bool IsTagStart(string text, int start)
+        {
+            int i = start + 1; if (i < text.Length && (text[i] == '/' || text[i] == '+')) i++;
+            int nameStart = i; while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_')) i++;
+            if (i == nameStart) return false; while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+            return i < text.Length && text[i] == ']';
         }
         private static string StripComments(string value)
         {
