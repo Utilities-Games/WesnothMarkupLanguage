@@ -130,6 +130,40 @@ namespace WesnothMarkupLanguage.Test
             Assert.Contains(result.SourceMap, entry => entry.Source == "inner.cfg" && entry.OutputStart == insertion && entry.OutputLength == 1);
         }
 
+        [Fact] public async Task Consumes_positional_grouping_parentheses_around_a_tag_block()
+        {
+            const string input = "#define WRAP WML\n{WML}\n#enddef\n{WRAP (\n[tag]\nid=x\n[/tag]\n)}\n";
+            var resolver = new RecordingResolver(); var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync(input, options);
+            var tag = Assert.Single(result.Syntax.Document.Tags); Assert.False(result.HasErrors); Assert.Equal("tag", tag.Name); Assert.Equal("x", tag.GetAttribute("id")); Assert.Empty(resolver.Requests);
+            Assert.DoesNotContain(result.Syntax.Diagnostics, d => d.Code == "WML1007"); Assert.DoesNotContain("(\n[tag]", result.Text); Assert.DoesNotContain("[/tag]\n)", result.Text);
+        }
+
+        [Theory]
+        [InlineData("((text))", "(text)")]
+        [InlineData("(\"two words\")", "\"two words\"")]
+        [InlineData("({INNER 2})", "2")]
+        [InlineData("(<<line 1\nline 2>>)", "<<line 1\nline 2>>")]
+        public async Task Unwraps_one_balanced_positional_group_and_expands_its_body(string argument, string expected)
+        {
+            const string definitions = "#define INNER VALUE\n{VALUE}#enddef\n#define WRAP WML\nvalue={WML}\n#enddef\n";
+            var result = await WmlPreprocessor.ProcessAsync(definitions + "{WRAP " + argument + "}\n");
+            Assert.False(result.HasErrors); Assert.Contains("value=" + expected, result.Text); Assert.DoesNotContain(result.Syntax.Diagnostics, d => d.Code == "WML1007");
+        }
+
+        [Fact] public async Task Keeps_named_groups_and_grouped_source_map_provenance()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["macros.cfg"] = new WmlSource("macros.cfg", "#define WRAP WML\n{WML}\n#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{macros.cfg}\n{WRAP (WML=[tag]\nid=x\n[/tag])}\n", options, "main.cfg");
+            int insertion = result.Text.IndexOf("id=x", System.StringComparison.Ordinal);
+            Assert.False(result.HasErrors); Assert.True(insertion >= 0); Assert.Equal(new[] { "macros.cfg" }, resolver.Requests);
+            Assert.Contains(result.SourceMap, entry => entry.Source == "macros.cfg" && entry.OutputStart <= insertion && entry.OutputStart + entry.OutputLength >= insertion + 4);
+        }
+
         [Fact] public async Task Shifts_embedded_macro_source_map_entries_to_their_output_offsets()
         {
             var resolver = new RecordingResolver(new Dictionary<string, WmlSource>

@@ -66,5 +66,25 @@ namespace WesnothMarkupLanguage.Test
             }
             finally { Directory.Delete(root, true); }
         }
+
+        [Fact]
+        public async Task Adjacent_tags_grouped_arguments_and_multiline_concatenation_match_official_1_18_7()
+        {
+            DotEnvTestConfiguration.EnsureLoaded();
+            string? executable = Environment.GetEnvironmentVariable("WESNOTH_1_18_7_EXECUTABLE");
+            if (string.IsNullOrWhiteSpace(executable)) return;
+            const string input = "#define WRAP WML\n{WML}\n#enddef\n[container]\n{WRAP (\n[tag]\nid=grouped\n[/tag]\n)}\nmessage= _ \"first\" +\n _ \"second\"\n[redraw][/redraw]\n[/container]\n";
+            string root = Path.Combine(Path.GetTempPath(), "wml-differential-parser-" + Guid.NewGuid().ToString("N")); string output = Path.Combine(root, "output"); Directory.CreateDirectory(output); string source = Path.Combine(root, "fixture.cfg"); File.WriteAllText(source, input);
+            try
+            {
+                var start = new ProcessStartInfo(executable!, $"--preprocess \"{source}\" \"{output}\"") { UseShellExecute = false, RedirectStandardError = true, CreateNoWindow = true };
+                using var process = Process.Start(start)!; await process.WaitForExitAsync(); string stderr = await process.StandardError.ReadToEndAsync(); Assert.True(process.ExitCode == 0, stderr);
+                string officialFile = Directory.GetFiles(output, "*.cfg").Single(); var official = WmlParser.Parse(File.ReadAllText(officialFile)); var ours = await WmlPreprocessor.ProcessAsync(input, sourceName: source);
+                var officialContainer = Assert.Single(official.Document.Tags); var oursContainer = Assert.Single(ours.Syntax.Document.Tags);
+                Assert.False(ours.HasErrors); Assert.Equal(officialContainer.GetAttribute("message"), oursContainer.GetAttribute("message")); Assert.Equal(officialContainer.Tags.Select(t => t.Name), oursContainer.Tags.Select(t => t.Name));
+                Assert.Equal(officialContainer.Tags.First(t => t.Name == "tag").GetAttribute("id"), oursContainer.Tags.First(t => t.Name == "tag").GetAttribute("id"));
+            }
+            finally { Directory.Delete(root, true); }
+        }
     }
 }

@@ -17,7 +17,7 @@ namespace WesnothMarkupLanguage
                 var item = lines[i];
                 string logical = item.Text;
                 while (NeedsContinuation(logical) && i + 1 < lines.Count) logical += lines[++i].Text;
-                ParseStatement(logical, item.Start, item.LineNumber, source, document, stack, diagnostics);
+                ParseStatements(logical, item.Start, item.LineNumber, source, document, stack, diagnostics);
             }
             while (stack.Count > 0)
             {
@@ -28,12 +28,30 @@ namespace WesnothMarkupLanguage
             return new WmlSyntaxTree(text, source, document, diagnostics);
         }
 
-        private static void ParseStatement(string raw, int start, int line, string? source, WmlDocument doc, Stack<WmlTag> stack, List<WmlDiagnostic> diagnostics)
+        private static void ParseStatements(string raw, int start, int line, string? source, WmlDocument doc, Stack<WmlTag> stack, List<WmlDiagnostic> diagnostics)
+        {
+            int position = 0;
+            while (position < raw.Length)
+            {
+                while (position < raw.Length && char.IsWhiteSpace(raw[position])) position++;
+                if (position >= raw.Length) return;
+                int statementLine = line, lineStart = 0;
+                for (int i = 0; i < position; i++) if (raw[i] == '\n') { statementLine++; lineStart = i + 1; }
+                if (raw[position] == '[')
+                {
+                    int close = raw.IndexOf(']', position); if (close < 0) { ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return; }
+                    ParseStatement(raw.Substring(position, close - position + 1), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); position = close + 1; continue;
+                }
+                ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return;
+            }
+        }
+
+        private static void ParseStatement(string raw, int start, int line, int columnOffset, string? source, WmlDocument doc, Stack<WmlTag> stack, List<WmlDiagnostic> diagnostics)
         {
             string trimmed = raw.Trim();
             if (trimmed.Length == 0) return;
-            int column = raw.IndexOf(trimmed, StringComparison.Ordinal) + 1;
-            var span = new WmlSourceSpan(source, start + column - 1, trimmed.Length, line, column);
+            int localStart = raw.IndexOf(trimmed, StringComparison.Ordinal), column = columnOffset + localStart + 1;
+            var span = new WmlSourceSpan(source, start + localStart, trimmed.Length, line, column);
             if (trimmed[0] == '#')
             {
                 if (IsDirective(trimmed, out var name, out var args)) Add(new WmlDirective(name, args) { Span = span }, doc, stack);
@@ -50,6 +68,7 @@ namespace WesnothMarkupLanguage
                     string closing = name.Substring(1);
                     if (stack.Count == 0) { diagnostics.Add(Diagnostic("WML1002", $"Unexpected closing tag [/{closing}].", source, span.Start, span.Length, line, column)); return; }
                     var opened = stack.Pop();
+                    opened.ClosingSpan = span;
                     if (!string.Equals(opened.Name, closing, StringComparison.Ordinal)) diagnostics.Add(Diagnostic("WML1004", $"Closing tag [/{closing}] does not match [{opened.Name}].", source, span.Start, span.Length, line, column));
                     if (opened.IsAmendment) ApplyAmendment(opened, doc, stack, diagnostics, span);
                     return;
@@ -67,7 +86,7 @@ namespace WesnothMarkupLanguage
             if (equals >= 0)
             {
                 string keysText = trimmed.Substring(0, equals).Trim();
-                string valueText = StripComment(trimmed.Substring(equals + 1)).Trim();
+                string valueText = StripComments(trimmed.Substring(equals + 1)).Trim();
                 var keys = SplitOutside(keysText, ','); var values = SplitOutside(valueText, ',');
                 for (int k = 0; k < keys.Count; k++)
                 {
@@ -118,6 +137,7 @@ namespace WesnothMarkupLanguage
         }
         private static bool NeedsContinuation(string text)
         {
+            text = StripComments(text);
             bool quote = false, raw = false;
             for (int i = 0; i < text.Length; i++)
             {
@@ -125,7 +145,7 @@ namespace WesnothMarkupLanguage
                 if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
                 if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; }
             }
-            return quote || raw;
+            return quote || raw || text.TrimEnd().EndsWith("+", StringComparison.Ordinal);
         }
         internal static int FindOutside(string text, char wanted)
         {
@@ -147,7 +167,21 @@ namespace WesnothMarkupLanguage
             while (offset <= text.Length) { int found = FindOutside(text.Substring(offset), separator); if (found < 0) break; found += offset; result.Add(text.Substring(start, found - start)); start = found + 1; offset = start; }
             result.Add(text.Substring(start)); return result;
         }
-        private static string StripComment(string value) { int index = FindOutside(value, '#'); return index < 0 ? value : value.Substring(0, index); }
+        private static string StripComments(string value)
+        {
+            var result = new StringBuilder(); bool quote = false, raw = false; int parentheses = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (!quote && !raw && i + 1 < value.Length && value[i] == '<' && value[i + 1] == '<') { raw = true; result.Append(value[i]); result.Append(value[++i]); continue; }
+                if (raw && i + 1 < value.Length && value[i] == '>' && value[i + 1] == '>') { raw = false; result.Append(value[i]); result.Append(value[++i]); continue; }
+                if (!raw && value[i] == '"') { result.Append(value[i]); if (quote && i + 1 < value.Length && value[i + 1] == '"') result.Append(value[++i]); else quote = !quote; continue; }
+                if (!quote && !raw && value[i] == '(') parentheses++;
+                else if (!quote && !raw && value[i] == ')' && parentheses > 0) parentheses--;
+                if (!quote && !raw && parentheses == 0 && value[i] == '#') { while (i + 1 < value.Length && value[i + 1] != '\n') i++; continue; }
+                result.Append(value[i]);
+            }
+            return result.ToString();
+        }
     }
 
     internal static class WmlValueParser

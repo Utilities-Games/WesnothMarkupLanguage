@@ -58,6 +58,7 @@ namespace WesnothMarkupLanguage
         public WmlTag(string name) { _name = name ?? throw new ArgumentNullException(nameof(name)); _children = new WmlNodeList(AttachChild, Changed); }
         public string Name { get => _name; set { _name = value ?? throw new ArgumentNullException(nameof(value)); Changed(); } }
         public bool IsAmendment { get; set; }
+        public WmlSourceSpan? ClosingSpan { get; internal set; }
         public IList<WmlNode> Children => _children;
         public IEnumerable<WmlTag> Tags => _children.OfType<WmlTag>();
         public IEnumerable<WmlAttribute> Attributes => _children.OfType<WmlAttribute>();
