@@ -94,7 +94,16 @@ namespace WesnothMarkupLanguage
                     if (trimmed.StartsWith("#define ", StringComparison.Ordinal))
                     {
                         var header = Tokens(trimmed.Substring(8)); string name = header.Count == 0 ? "" : header[0]; var parameters = header.Skip(1).ToList(); var body = new StringBuilder();
-                        while (++i < lines.Count && !lines[i].Trim().StartsWith("#enddef", StringComparison.Ordinal)) body.Append(lines[i]);
+                        bool definitionQuote = false, definitionRaw = false;
+                        while (++i < lines.Count)
+                        {
+                            string definitionLine = lines[i]; int enddef = FindDirective(definitionLine, "#enddef", ref definitionQuote, ref definitionRaw);
+                            if (enddef < 0) { body.Append(definitionLine); continue; }
+                            body.Append(definitionLine, 0, enddef);
+                            string remainder = definitionLine.Substring(enddef + 7);
+                            if (remainder.Trim().Length > 0) lines.Insert(i + 1, remainder);
+                            break;
+                        }
                         var optional = new Dictionary<string, string>(StringComparer.Ordinal); string macroBody = ExtractOptionalArguments(body.ToString(), optional);
                         if (enabled && name.Length > 0) _macros[name] = new WmlMacroDefinition(name, parameters, macroBody, source, optional); continue;
                     }
@@ -112,7 +121,8 @@ namespace WesnothMarkupLanguage
                     if (trimmed.StartsWith("#", StringComparison.Ordinal) && !trimmed.StartsWith("#textdomain", StringComparison.Ordinal)) continue;
                     int comment = WmlParsing.FindOutside(line, '#'); if (comment >= 0) line = line.Substring(0, comment) + (line.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n" : line.EndsWith("\n", StringComparison.Ordinal) ? "\n" : string.Empty);
                     if (FindCall(line, 0) >= 0 && MatchingBrace(line, FindCall(line, 0)) < 0) while (i + 1 < lines.Count && MatchingBrace(line, FindCall(line, 0)) < 0) line += lines[++i];
-                    string expandedLine = await ExpandCallsAsync(line, source, includeDepth, macroDepth).ConfigureAwait(false); Append(output, expandedLine, source);
+                    int mapStart = _map.Count; string expandedLine = await ExpandCallsAsync(line, source, includeDepth, macroDepth).ConfigureAwait(false);
+                    ShiftMapEntries(mapStart, output.Length); Append(output, expandedLine, source);
                 }
                 if (active.Count > 0) Error("WML2008", "Unterminated conditional block.", source); return output.ToString();
             }
@@ -125,8 +135,15 @@ namespace WesnothMarkupLanguage
                     int open = FindCall(line, position); if (open < 0) { output.Append(line, position, line.Length - position); break; }
                     output.Append(line, position, open - position); int close = MatchingBrace(line, open); if (close < 0) { output.Append(line, open, line.Length - open); Error("WML2009", "Unterminated macro/include expression.", source); break; }
                     string expression = line.Substring(open + 1, close - open - 1); var tokens = Tokens(expression); string replacement = string.Empty;
+                    int mapStart = _map.Count;
                     if (tokens.Count > 0 && _macros.TryGetValue(tokens[0], out var macro)) replacement = await ExpandMacroAsync(macro, tokens.Skip(1).ToList(), source, includeDepth, macroDepth + 1).ConfigureAwait(false);
-                    else if (tokens.Count > 0) replacement = await IncludeAsync(expression.Trim(), source, includeDepth + 1, macroDepth).ConfigureAwait(false);
+                    else if (tokens.Count > 0)
+                    {
+                        string candidate = expression.Trim();
+                        var kind = tokens.Count > 1 && IsSymbol(tokens[0]) ? WmlPreprocessorExpressionKind.MacroInvocation : tokens.Count == 1 && IsSymbol(tokens[0]) ? WmlPreprocessorExpressionKind.Ambiguous : WmlPreprocessorExpressionKind.Include;
+                        replacement = await IncludeAsync(expression, candidate, tokens[0], kind, source, includeDepth + 1, macroDepth).ConfigureAwait(false);
+                    }
+                    ShiftMapEntries(mapStart, output.Length);
                     output.Append(replacement); position = close + 1;
                 }
                 return output.ToString();
@@ -146,16 +163,28 @@ namespace WesnothMarkupLanguage
                 return await ProcessTextAsync(body, macro.Source ?? source, includeDepth, depth).ConfigureAwait(false);
             }
 
-            private async Task<string> IncludeAsync(string path, string? source, int includeDepth, int macroDepth)
+            private async Task<string> IncludeAsync(string expression, string path, string symbol, WmlPreprocessorExpressionKind kind, string? source, int includeDepth, int macroDepth)
             {
-                if (_resolver == null) { Error("WML2010", $"No source resolver is configured for include '{path}'.", source); return string.Empty; }
+                if (_resolver == null)
+                {
+                    if (kind == WmlPreprocessorExpressionKind.MacroInvocation) Error("WML2014", $"Unknown macro '{symbol}'; include fallback '{path}' did not run because no source resolver is configured.", source, Context(false));
+                    else Error("WML2010", $"No source resolver is configured for include '{path}'.", source, Context(false));
+                    return string.Empty;
+                }
                 WmlSource? resolved;
                 try { resolved = await _resolver.ResolveAsync(path, source, _cancellation).ConfigureAwait(false); }
-                catch (Exception ex) { Error("WML2011", $"Include '{path}' failed: {ex.Message}", source); return string.Empty; }
-                if (resolved == null) { Error("WML2012", $"Include '{path}' was not found.", source); return string.Empty; }
-                if (!_includes.Add(resolved.Path)) { Error("WML2013", $"Include cycle detected at '{resolved.Path}'.", source); return string.Empty; }
+                catch (Exception ex) { FailedFallback($"failed: {ex.Message}"); return string.Empty; }
+                if (resolved == null) { FailedFallback("was not found."); return string.Empty; }
+                if (!_includes.Add(resolved.Path)) { Error("WML2013", $"Include cycle detected at '{resolved.Path}'.", source, Context(true)); return string.Empty; }
                 try { return await ProcessTextAsync(resolved.Text, resolved.Path, includeDepth, macroDepth).ConfigureAwait(false); }
                 finally { _includes.Remove(resolved.Path); }
+
+                WmlPreprocessorDiagnosticContext Context(bool attempted) => new WmlPreprocessorDiagnosticContext(expression, symbol, kind, false, attempted, attempted ? path : null);
+                void FailedFallback(string outcome)
+                {
+                    if (kind == WmlPreprocessorExpressionKind.MacroInvocation) Error("WML2014", $"Unknown macro '{symbol}'; include fallback '{path}' {outcome}", source, Context(true));
+                    else Error(outcome.StartsWith("failed:", StringComparison.Ordinal) ? "WML2011" : "WML2012", $"Include '{path}' {outcome}", source, Context(true));
+                }
             }
 
             private async Task<bool> EvaluateCondition(string line, string? source)
@@ -172,12 +201,15 @@ namespace WesnothMarkupLanguage
             }
 
             private void Append(StringBuilder output, string value, string? source) { long bytes = Encoding.UTF8.GetByteCount(value); _bytes += bytes; if (_bytes > _options.MaxOutputBytes) throw new WmlException("Maximum preprocessor output size exceeded."); int start = output.Length; output.Append(value); _map.Add(new WmlSourceMapEntry(start, value.Length, source)); }
-            private void Error(string code, string message, string? source) => Report(code, message, WmlDiagnosticSeverity.Error, source);
-            private void Report(string code, string message, WmlDiagnosticSeverity severity, string? source) => _diagnostics.Add(new WmlDiagnostic(code, message, severity, new WmlSourceSpan(source, 0, 0, 1, 1)));
+            private void ShiftMapEntries(int start, int offset) { for (int i = start; i < _map.Count; i++) { var entry = _map[i]; _map[i] = new WmlSourceMapEntry(entry.OutputStart + offset, entry.OutputLength, entry.Source); } }
+            private void Error(string code, string message, string? source, WmlPreprocessorDiagnosticContext? context = null) => Report(code, message, WmlDiagnosticSeverity.Error, source, context);
+            private void Report(string code, string message, WmlDiagnosticSeverity severity, string? source, WmlPreprocessorDiagnosticContext? context = null) => _diagnostics.Add(new WmlDiagnostic(code, message, severity, new WmlSourceSpan(source, 0, 0, 1, 1), context));
             private readonly struct Condition { public Condition(bool parentEnabled, bool branch) { ParentEnabled = parentEnabled; Branch = branch; } public bool ParentEnabled { get; } public bool Branch { get; } }
             private static List<string> ReadLines(string text) { var result = new List<string>(); int start = 0; for (int i = 0; i < text.Length; i++) if (text[i] == '\n') { result.Add(text.Substring(start, i - start + 1)); start = i + 1; } if (start < text.Length) result.Add(text.Substring(start)); return result; }
-            private static int FindCall(string s, int start) { bool quote = false, raw = false; for (int i = start; i < s.Length; i++) { if (!quote && i + 1 < s.Length && s[i] == '<' && s[i + 1] == '<') { raw = true; i++; } else if (raw && i + 1 < s.Length && s[i] == '>' && s[i + 1] == '>') { raw = false; i++; } else if (!raw && s[i] == '"') quote = !quote; else if (!quote && !raw && s[i] == '{') return i; } return -1; }
-            private static int MatchingBrace(string s, int open) { int depth = 0; bool quote = false; for (int i = open; i < s.Length; i++) { if (s[i] == '"') quote = !quote; if (quote) continue; if (s[i] == '{') depth++; else if (s[i] == '}' && --depth == 0) return i; } return -1; }
+            private static int FindCall(string s, int start) { bool raw = false; for (int i = start; i < s.Length; i++) { if (!raw && i + 1 < s.Length && s[i] == '<' && s[i + 1] == '<') { raw = true; i++; } else if (raw && i + 1 < s.Length && s[i] == '>' && s[i + 1] == '>') { raw = false; i++; } else if (!raw && s[i] == '{') return i; } return -1; }
+            private static int MatchingBrace(string s, int open) { int depth = 0; bool raw = false; for (int i = open; i < s.Length; i++) { if (!raw && i + 1 < s.Length && s[i] == '<' && s[i + 1] == '<') { raw = true; i++; continue; } if (raw && i + 1 < s.Length && s[i] == '>' && s[i + 1] == '>') { raw = false; i++; continue; } if (raw) continue; if (s[i] == '{') depth++; else if (s[i] == '}' && --depth == 0) return i; } return -1; }
+            private static int FindDirective(string text, string directive, ref bool quote, ref bool raw) { for (int i = 0; i < text.Length; i++) { if (!quote && !raw && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; } if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; } if (!raw && text[i] == '"') { quote = !quote; continue; } if (!quote && !raw && i <= text.Length - directive.Length && string.CompareOrdinal(text, i, directive, 0, directive.Length) == 0 && (i + directive.Length == text.Length || char.IsWhiteSpace(text[i + directive.Length]) || text[i + directive.Length] == '#')) return i; } return -1; }
+            private static bool IsSymbol(string value) { if (value.Length == 0) return false; foreach (char c in value) if (!(char.IsLetterOrDigit(c) || c == '_')) return false; return true; }
             private static List<string> Tokens(string input) { var result = new List<string>(); var b = new StringBuilder(); int paren = 0; bool quote = false; foreach (char c in input) { if (c == '"') quote = !quote; if (!quote && c == '(') paren++; if (!quote && c == ')') paren--; if (!quote && paren == 0 && char.IsWhiteSpace(c)) { if (b.Length > 0) { result.Add(b.ToString()); b.Clear(); } } else b.Append(c); } if (b.Length > 0) result.Add(b.ToString()); return result; }
             private static string ExtractOptionalArguments(string body, IDictionary<string, string> optional)
             {

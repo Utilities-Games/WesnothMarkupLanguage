@@ -4,6 +4,28 @@ namespace WesnothMarkupLanguage
 {
     public enum WmlDiagnosticSeverity { Info, Warning, Error }
 
+    public enum WmlPreprocessorExpressionKind { Include, MacroInvocation, Ambiguous }
+
+    public sealed class WmlPreprocessorDiagnosticContext
+    {
+        public WmlPreprocessorDiagnosticContext(string expression, string? symbol, WmlPreprocessorExpressionKind expressionKind, bool macroWasRegistered, bool includeFallbackAttempted, string? includeCandidate)
+        {
+            Expression = expression;
+            Symbol = symbol;
+            ExpressionKind = expressionKind;
+            MacroWasRegistered = macroWasRegistered;
+            IncludeFallbackAttempted = includeFallbackAttempted;
+            IncludeCandidate = includeCandidate;
+        }
+
+        public string Expression { get; }
+        public string? Symbol { get; }
+        public WmlPreprocessorExpressionKind ExpressionKind { get; }
+        public bool MacroWasRegistered { get; }
+        public bool IncludeFallbackAttempted { get; }
+        public string? IncludeCandidate { get; }
+    }
+
     public sealed class WmlSourceSpan
     {
         public WmlSourceSpan(string? source, int start, int length, int line, int column)
@@ -19,11 +41,14 @@ namespace WesnothMarkupLanguage
     public sealed class WmlDiagnostic
     {
         public WmlDiagnostic(string code, string message, WmlDiagnosticSeverity severity, WmlSourceSpan span)
-        { Code = code; Message = message; Severity = severity; Span = span; }
+            : this(code, message, severity, span, null) { }
+        public WmlDiagnostic(string code, string message, WmlDiagnosticSeverity severity, WmlSourceSpan span, WmlPreprocessorDiagnosticContext? preprocessorContext)
+        { Code = code; Message = message; Severity = severity; Span = span; PreprocessorContext = preprocessorContext; }
         public string Code { get; }
         public string Message { get; }
         public WmlDiagnosticSeverity Severity { get; }
         public WmlSourceSpan Span { get; }
+        public WmlPreprocessorDiagnosticContext? PreprocessorContext { get; }
         public override string ToString() => $"{Span}: {Severity} {Code}: {Message}";
     }
 
