@@ -77,6 +77,22 @@ namespace WesnothMarkupLanguage.Test
             }
             finally { Directory.Delete(root, true); }
         }
+        [Fact] public async Task Directory_include_segments_preserve_child_file_context_for_relative_includes()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "wml-directory-segment-" + System.Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(root, "campaign", "scenarios"));
+            File.WriteAllText(Path.Combine(root, "campaign", "scenarios", "_main.cfg"), "{./child.cfg}\n");
+            File.WriteAllText(Path.Combine(root, "campaign", "scenarios", "child.cfg"), "[scenario]\nid=child\n[/scenario]\n");
+            try
+            {
+                var options = new WmlPreprocessorOptions { SourceResolver = new FileSystemWmlSourceResolver(root) };
+                var result = await WmlPreprocessor.ProcessAsync("{campaign/}\n", options, Path.Combine(root, "main.cfg"));
+                var scenario = Assert.Single(result.Syntax.Document.Tags);
+                Assert.False(result.HasErrors);
+                Assert.Equal("child", scenario.GetAttribute("id"));
+                Assert.Equal(Path.Combine(root, "campaign", "scenarios", "child.cfg"), scenario.Provenance?.LogicalSource);
+            }
+            finally { Directory.Delete(root, true); }
+        }
         [Fact] public async Task Enforces_output_limit()
         {
             var options = new WmlPreprocessorOptions { MaxOutputBytes = 2 }; await Assert.ThrowsAsync<WmlException>(() => WmlPreprocessor.ProcessAsync("[a]\n[/a]\n", options));
@@ -327,6 +343,72 @@ namespace WesnothMarkupLanguage.Test
             var result = await WmlPreprocessor.ProcessAsync("{missing/file.cfg}\n", options, "main.cfg");
             var diagnostic = Assert.Single(result.Diagnostics, d => d.Code == "WML2012"); var context = Assert.IsType<WmlPreprocessorDiagnosticContext>(diagnostic.PreprocessorContext);
             Assert.Equal(WmlPreprocessorExpressionKind.Include, context.ExpressionKind); Assert.True(context.IncludeFallbackAttempted); Assert.Equal("missing/file.cfg", context.IncludeCandidate);
+        }
+
+        [Fact] public async Task Macro_expanded_dom_nodes_expose_definition_and_invocation_provenance()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["macros.cfg"] = new WmlSource("macros.cfg", "#define UNIT ID\n[unit]\nid={ID}\n[/unit]\n#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{macros.cfg}\n[event]\n{UNIT Bob}\n[/event]\n", options, "main.cfg");
+            var unit = Assert.Single(Assert.Single(result.Syntax.Document.Tags).Tags);
+            var provenance = Assert.IsType<WmlExpansionProvenance>(unit.Provenance);
+            var frame = Assert.Single(provenance.ExpansionChain);
+            Assert.Equal("macros.cfg", provenance.LogicalSource);
+            Assert.Equal(WmlSourceReferencePrecision.Exact, provenance.Source.Precision);
+            Assert.Equal("UNIT", frame.MacroSymbol);
+            Assert.Equal("macros.cfg", frame.Definition.Source);
+            Assert.Equal(WmlSourceReferencePrecision.Exact, frame.Definition.Precision);
+            Assert.Equal("main.cfg", frame.Invocation.Source);
+            Assert.Equal(WmlSourceReferencePrecision.Exact, frame.Invocation.Precision);
+            Assert.Equal(3, frame.Invocation.Line);
+            Assert.Equal(1, frame.Invocation.Column);
+        }
+
+        [Fact] public async Task Parser_diagnostics_from_macro_output_expose_expansion_provenance()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["macros.cfg"] = new WmlSource("macros.cfg", "#define BAD\n)\n#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{macros.cfg}\n{BAD}\n", options, "main.cfg");
+            var diagnostic = Assert.Single(result.Syntax.Diagnostics, d => d.Code == "WML1007");
+            var frame = Assert.Single(Assert.IsType<WmlExpansionProvenance>(diagnostic.Provenance).ExpansionChain);
+            Assert.Equal("BAD", frame.MacroSymbol);
+            Assert.Equal("macros.cfg", frame.Definition.Source);
+            Assert.Equal("main.cfg", frame.Invocation.Source);
+        }
+
+        [Fact] public async Task Preprocessor_diagnostics_use_exact_expression_span_and_provenance_context()
+        {
+            var resolver = new RecordingResolver(); var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("prefix\n  {MISSING one two}\n", options, "main.cfg");
+            var diagnostic = Assert.Single(result.Diagnostics, d => d.Code == "WML2014");
+            Assert.Equal("main.cfg", diagnostic.Span.Source);
+            Assert.Equal(2, diagnostic.Span.Line);
+            Assert.Equal(3, diagnostic.Span.Column);
+            Assert.Equal("{MISSING one two}".Length, diagnostic.Span.Length);
+            var provenance = Assert.IsType<WmlExpansionProvenance>(diagnostic.Provenance);
+            Assert.Equal(WmlSourceReferencePrecision.Exact, provenance.Source.Precision);
+            Assert.Empty(provenance.ExpansionChain);
+        }
+
+        [Fact] public async Task Nested_macro_output_keeps_the_full_expansion_chain()
+        {
+            var resolver = new RecordingResolver(new Dictionary<string, WmlSource>
+            {
+                ["macros.cfg"] = new WmlSource("macros.cfg", "#define INNER VALUE\n{VALUE}#enddef\n#define OUTER VALUE\n[unit]\nid={INNER {VALUE}}\n[/unit]\n#enddef\n")
+            });
+            var options = new WmlPreprocessorOptions { SourceResolver = resolver };
+            var result = await WmlPreprocessor.ProcessAsync("{macros.cfg}\n{OUTER Bob}\n", options, "main.cfg");
+            var attribute = Assert.Single(Assert.Single(result.Syntax.Document.Tags).Attributes);
+            var provenance = Assert.IsType<WmlExpansionProvenance>(attribute.Provenance);
+            Assert.Equal(new[] { "OUTER", "INNER" }, provenance.ExpansionChain.Select(frame => frame.MacroSymbol).ToArray());
+            Assert.Equal("main.cfg", provenance.ExpansionChain[0].Invocation.Source);
+            Assert.Equal("macros.cfg", provenance.ExpansionChain[1].Invocation.Source);
         }
 
         private sealed class RecordingResolver : IWmlSourceResolver

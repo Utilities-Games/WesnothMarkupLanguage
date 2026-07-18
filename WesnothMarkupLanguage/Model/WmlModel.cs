@@ -8,6 +8,7 @@ namespace WesnothMarkupLanguage
     public abstract class WmlNode
     {
         public WmlSourceSpan? Span { get; internal set; }
+        public WmlExpansionProvenance? Provenance { get; internal set; }
         internal WmlDocument? Owner { get; set; }
         protected void Changed() { if (Owner != null) Owner.IsModified = true; }
     }
@@ -59,6 +60,7 @@ namespace WesnothMarkupLanguage
         public string Name { get => _name; set { _name = value ?? throw new ArgumentNullException(nameof(value)); Changed(); } }
         public bool IsAmendment { get; set; }
         public WmlSourceSpan? ClosingSpan { get; internal set; }
+        public WmlExpansionProvenance? ClosingProvenance { get; internal set; }
         public IList<WmlNode> Children => _children;
         public IEnumerable<WmlTag> Tags => _children.OfType<WmlTag>();
         public IEnumerable<WmlAttribute> Attributes => _children.OfType<WmlAttribute>();

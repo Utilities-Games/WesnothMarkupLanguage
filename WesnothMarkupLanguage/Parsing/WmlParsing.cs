@@ -12,12 +12,15 @@ namespace WesnothMarkupLanguage
             var document = new WmlDocument(text);
             var stack = new Stack<WmlTag>();
             var lines = SplitLines(text);
+            bool inMacroDefinition = false;
             for (int i = 0; i < lines.Count; i++)
             {
                 var item = lines[i];
                 string logical = item.Text;
                 while (NeedsContinuation(logical) && i + 1 < lines.Count) logical += lines[++i].Text;
+                if (inMacroDefinition) { if (FindPreprocessorDirective(logical, "#enddef") >= 0) inMacroDefinition = false; continue; }
                 ParseStatements(logical, item.Start, item.LineNumber, source, document, stack, diagnostics);
+                if (IsDefineStart(logical) && FindPreprocessorDirective(logical, "#enddef") < 0) inMacroDefinition = true;
             }
             while (stack.Count > 0)
             {
@@ -37,10 +40,16 @@ namespace WesnothMarkupLanguage
                 if (position >= raw.Length) return;
                 int statementLine = line, lineStart = 0;
                 for (int i = 0; i < position; i++) if (raw[i] == '\n') { statementLine++; lineStart = i + 1; }
+                if (raw[position] == '#') { ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return; }
                 if (raw[position] == '[')
                 {
                     int close = raw.IndexOf(']', position); if (close < 0) { ParseStatement(raw.Substring(position), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); return; }
                     ParseStatement(raw.Substring(position, close - position + 1), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); position = close + 1; continue;
+                }
+                if (raw[position] == '{')
+                {
+                    int close = FindMatchingBrace(raw, position);
+                    if (close >= 0) { ParseStatement(raw.Substring(position, close - position + 1), start + position, statementLine, position - lineStart, source, doc, stack, diagnostics); position = close + 1; continue; }
                 }
                 int nextTag = FindNextTagStart(raw, position + 1);
                 if (nextTag >= 0)
@@ -86,7 +95,8 @@ namespace WesnothMarkupLanguage
                 stack.Push(tag);
                 return;
             }
-            if (trimmed[0] == '{' && trimmed[trimmed.Length - 1] == '}') { Add(new WmlMacroCall(trimmed.Substring(1, trimmed.Length - 2)) { Span = span }, doc, stack); return; }
+            string uncommented = StripComments(trimmed).TrimEnd();
+            if (uncommented.Length > 0 && uncommented[0] == '{' && uncommented[uncommented.Length - 1] == '}') { Add(new WmlMacroCall(uncommented.Substring(1, uncommented.Length - 2)) { Span = span }, doc, stack); return; }
             int equals = FindOutside(trimmed, '=');
             if (equals >= 0)
             {
@@ -129,6 +139,7 @@ namespace WesnothMarkupLanguage
             name = s.Substring(1, p - 1); args = s.Substring(p).Trim();
             switch (name) { case "define": case "enddef": case "arg": case "endarg": case "undef": case "ifdef": case "ifndef": case "ifhave": case "ifnhave": case "ifver": case "ifnver": case "else": case "endif": case "error": case "warning": case "deprecated": case "textdomain": return true; default: return false; }
         }
+        private static bool IsDefineStart(string text) => text.TrimStart().StartsWith("#define ", StringComparison.Ordinal);
         private static bool IsName(string s) { if (s.Length == 0) return false; foreach (char c in s) if (!(char.IsLetterOrDigit(c) || c == '_')) return false; return true; }
         private static WmlDiagnostic Diagnostic(string code, string message, string? source, int start, int length, int line, int col) => new WmlDiagnostic(code, message, WmlDiagnosticSeverity.Error, new WmlSourceSpan(source, start, length, line, col));
 
@@ -143,14 +154,16 @@ namespace WesnothMarkupLanguage
         private static bool NeedsContinuation(string text)
         {
             text = StripComments(text);
-            bool quote = false, raw = false;
+            bool quote = false, raw = false; int braces = 0;
             for (int i = 0; i < text.Length; i++)
             {
                 if (!quote && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; }
                 if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
                 if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; }
+                if (!quote && !raw && text[i] == '{') braces++;
+                else if (!quote && !raw && text[i] == '}' && braces > 0) braces--;
             }
-            return quote || raw || text.TrimEnd().EndsWith("+", StringComparison.Ordinal);
+            return quote || raw || braces > 0 || text.TrimEnd().EndsWith("+", StringComparison.Ordinal);
         }
         internal static int FindOutside(string text, char wanted)
         {
@@ -180,6 +193,7 @@ namespace WesnothMarkupLanguage
                 if (!quote && !raw && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; }
                 if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
                 if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; continue; }
+                if (!quote && !raw && text[i] == '#') { while (i + 1 < text.Length && text[i + 1] != '\n') i++; continue; }
                 if (!quote && !raw && text[i] == '[' && IsTagStart(text, i) && (i == 0 || char.IsWhiteSpace(text[i - 1]))) return i;
             }
             return -1;
@@ -190,6 +204,32 @@ namespace WesnothMarkupLanguage
             int nameStart = i; while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_')) i++;
             if (i == nameStart) return false; while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
             return i < text.Length && text[i] == ']';
+        }
+        private static int FindMatchingBrace(string text, int open)
+        {
+            bool quote = false, raw = false; int braces = 0;
+            for (int i = open; i < text.Length; i++)
+            {
+                if (!quote && !raw && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; }
+                if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
+                if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; continue; }
+                if (quote || raw) continue;
+                if (text[i] == '{') braces++;
+                else if (text[i] == '}' && --braces == 0) return i;
+            }
+            return -1;
+        }
+        private static int FindPreprocessorDirective(string text, string directive)
+        {
+            bool quote = false, raw = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (!quote && !raw && i + 1 < text.Length && text[i] == '<' && text[i + 1] == '<') { raw = true; i++; continue; }
+                if (raw && i + 1 < text.Length && text[i] == '>' && text[i + 1] == '>') { raw = false; i++; continue; }
+                if (!raw && text[i] == '"') { if (quote && i + 1 < text.Length && text[i + 1] == '"') i++; else quote = !quote; continue; }
+                if (!quote && !raw && i <= text.Length - directive.Length && string.CompareOrdinal(text, i, directive, 0, directive.Length) == 0 && (i + directive.Length == text.Length || char.IsWhiteSpace(text[i + directive.Length]) || text[i + directive.Length] == '#')) return i;
+            }
+            return -1;
         }
         private static string StripComments(string value)
         {

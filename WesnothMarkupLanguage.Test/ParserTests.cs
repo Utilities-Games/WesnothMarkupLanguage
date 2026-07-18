@@ -41,6 +41,34 @@ namespace WesnothMarkupLanguage.Test
             Assert.Equal(input.IndexOf("[image]", System.StringComparison.Ordinal), image.Span!.Start); Assert.Equal(input, WmlWriter.Write(tree));
         }
 
+        [Fact] public void Does_not_tokenize_tags_inside_comments()
+        {
+            const string input = "[side]\n# this [ai] tag is only prose\n[ai]\n[/ai]\n[/side]\n";
+            var tree = WmlParser.Parse(input, "comment-tag.cfg"); var side = Assert.Single(tree.Document.Tags);
+            Assert.False(tree.HasErrors); Assert.Equal("side", side.Name); Assert.Equal("ai", Assert.Single(side.Tags).Name); Assert.Single(side.Children.OfType<WmlComment>());
+        }
+
+        [Fact] public void Parses_macro_calls_with_trailing_comments()
+        {
+            const string input = "[scenario]\n{SCENARIO_MUSIC wanderer.ogg} # No story text\n{DEFENSE_ANIM \"defend.png\" \"base.png\" {SOUND_LIST:HUMAN_HIT} }\n[/scenario]\n";
+            var tree = WmlParser.Parse(input, "macro-comments.cfg"); var scenario = Assert.Single(tree.Document.Tags);
+            Assert.False(tree.HasErrors); Assert.Equal(new[] { "SCENARIO_MUSIC wanderer.ogg", "DEFENSE_ANIM \"defend.png\" \"base.png\" {SOUND_LIST:HUMAN_HIT} " }, scenario.Children.OfType<WmlMacroCall>().Select(call => call.Expression).ToArray());
+        }
+
+        [Fact] public void Parses_multiline_grouped_macro_calls_as_one_statement()
+        {
+            const string input = "[event]\n{REPEAT 12 (\n    [set_variable]\n        name=alpha\n        add=1\n    [/set_variable]\n)}\n[/event]\n";
+            var tree = WmlParser.Parse(input, "multiline-macro.cfg"); var action = Assert.Single(tree.Document.Tags); var call = Assert.Single(action.Children.OfType<WmlMacroCall>());
+            Assert.False(tree.HasErrors); Assert.Contains("[set_variable]", call.Expression); Assert.Equal(input, WmlWriter.Write(tree));
+        }
+
+        [Fact] public void Skips_semantic_validation_inside_macro_definitions()
+        {
+            const string input = "#define GENERATED_TAG NAME VALUE\n    {NAME}_{VALUE}_start_time=0\n    [{NAME}_{VALUE}_frame]\n    [/{NAME}_{VALUE}_frame]\n#enddef\n[unit_type]\nid=Generated\n[/unit_type]\n";
+            var tree = WmlParser.Parse(input, "macro-body.cfg");
+            Assert.False(tree.HasErrors); Assert.Equal("Generated", Assert.Single(tree.Document.Tags).GetAttribute("id")); Assert.Contains(tree.Document.Children.OfType<WmlDirective>(), directive => directive.Name == "define");
+        }
+
         [Fact] public void Same_line_mismatch_uses_the_individual_closing_token_span()
         {
             const string input = "[outer][inner][/outer]"; var tree = WmlParser.Parse(input, "mismatch.cfg"); var diagnostic = Assert.Single(tree.Diagnostics, d => d.Code == "WML1004");

@@ -23,9 +23,17 @@ namespace WesnothMarkupLanguage
             string? resolved = ResolvePath(path, includingSource); if (resolved == null) return null; EnsureSafe(resolved);
             if (File.Exists(resolved)) return new WmlSource(resolved, await ReadAsync(resolved, cancellationToken).ConfigureAwait(false));
             if (!Directory.Exists(resolved)) return null;
-            var files = SelectDirectoryFiles(resolved); var builder = new StringBuilder(); foreach (string file in files) { EnsureSafe(file); builder.Append(await ReadAsync(file, cancellationToken).ConfigureAwait(false)); }
+            var files = SelectDirectoryFiles(resolved); var builder = new StringBuilder(); var segments = new List<WmlSourceSegment>(); int textLine = 1;
+            foreach (string file in files)
+            {
+                EnsureSafe(file);
+                string fileText = await ReadAsync(file, cancellationToken).ConfigureAwait(false);
+                segments.Add(new WmlSourceSegment(builder.Length, fileText.Length, file, 0, 1, 1, textLine));
+                builder.Append(fileText);
+                textLine += CountLineBreaks(fileText);
+            }
             string directorySource = resolved.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            return new WmlSource(directorySource, builder.ToString());
+            return new WmlSource(directorySource, builder.ToString(), segments);
         }
         public Task<bool> ExistsAsync(string path, string? includingSource, CancellationToken cancellationToken)
         { string? resolved = ResolvePath(path, includingSource); return Task.FromResult(resolved != null && (File.Exists(resolved) || Directory.Exists(resolved))); }
@@ -50,6 +58,7 @@ namespace WesnothMarkupLanguage
             foreach (var sub in Directory.GetDirectories(directory)) { string subMain = Path.Combine(sub, "_main.cfg"); if (File.Exists(subMain)) files.Add(subMain); }
             files = files.OrderBy(f => f.Substring(directory.Length).TrimStart(Path.DirectorySeparatorChar), StringComparer.Ordinal).ToList(); if (File.Exists(initial)) files.Insert(0, initial); if (File.Exists(final)) files.Add(final); return files;
         }
+        private static int CountLineBreaks(string text) { int lines = 0; foreach (char c in text) if (c == '\n') lines++; return lines; }
         private static async Task<string> ReadAsync(string path, CancellationToken cancellationToken) { using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true)) using (var reader = new StreamReader(stream, new UTF8Encoding(false), true)) { cancellationToken.ThrowIfCancellationRequested(); return await reader.ReadToEndAsync().ConfigureAwait(false); } }
     }
 }

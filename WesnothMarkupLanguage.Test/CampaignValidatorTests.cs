@@ -17,7 +17,9 @@ namespace WesnothMarkupLanguage.Test
             using var installation = SyntheticInstallation.Create();
             installation.WriteCore("{core/macros/}\n[core_marker]\nid=loaded\n[/core_marker]\n");
             installation.WriteFile(Path.Combine("data", "core", "macros", "_main.cfg"), "#define SYNTHETIC_CORE_MACRO\n[macro_marker]\n[/macro_marker]\n#enddef\n{SYNTHETIC_CORE_MACRO}\n");
-            installation.WriteCampaign("Alpha", Campaign("Alpha", "CAMPAIGN_ALPHA", "#ifdef CAMPAIGN_ALPHA\n#ifdef NORMAL\n[scenario]\nid=active\n[/scenario]\n#endif\n#endif\n"));
+            installation.WriteCampaign("Alpha", Campaign("Alpha", "CAMPAIGN_ALPHA", "#ifdef CAMPAIGN_ALPHA\n#ifdef NORMAL\n{./units/}\n{./scenarios/}\n#endif\n#endif\n"));
+            installation.WriteFile(Path.Combine("data", "campaigns", "Alpha", "scenarios", "01_Alpha.cfg"), "[scenario]\nid=active\nname= _ \"Active\"\nnext_scenario=null\n[side]\nside=1\n[/side]\n[event]\nname=prestart\n[/event]\n[/scenario]\n");
+            installation.WriteFile(Path.Combine("data", "campaigns", "Alpha", "units", "Alpha_Unit.cfg"), "[unit_type]\nid=Alpha Unit\nname= _ \"Alpha Unit\"\nrace=human\nlevel=1\nhitpoints=32\nmovement=5\n[attack]\nname=sword\n[/attack]\n[/unit_type]\n");
             string reportPath = Path.Combine(installation.Root, "reports", "report.json");
 
             int exitCode = await Run(installation.Root, reportPath, "--campaign", "alpha");
@@ -25,16 +27,35 @@ namespace WesnothMarkupLanguage.Test
             Assert.Equal(0, exitCode);
             using JsonDocument report = JsonDocument.Parse(File.ReadAllText(reportPath));
             JsonElement root = report.RootElement;
-            Assert.Equal("1.0", root.GetProperty("schemaVersion").GetString());
+            Assert.Equal("1.2", root.GetProperty("schemaVersion").GetString());
             Assert.Equal("NORMAL", root.GetProperty("configuration").GetProperty("difficulty").GetString());
             Assert.Equal(1, root.GetProperty("summary").GetProperty("passed").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("scenarioFiles").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("scenarioFilesPassed").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("scenarios").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("unitFiles").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("unitFilesPassed").GetInt32());
+            Assert.Equal(1, root.GetProperty("summary").GetProperty("unitTypes").GetInt32());
             JsonElement result = Assert.Single(root.GetProperty("campaigns").EnumerateArray());
             Assert.Equal("Alpha", result.GetProperty("name").GetString());
             Assert.Equal("Alpha", result.GetProperty("campaignId").GetString());
             Assert.Equal("CAMPAIGN_ALPHA", result.GetProperty("campaignDefine").GetString());
             Assert.Equal("Passed", result.GetProperty("status").GetString());
             Assert.True(result.GetProperty("totalTagCount").GetInt32() >= 3);
-            Assert.Contains(result.GetProperty("sourceFiles").EnumerateArray().Select(item => item.GetString()), path => path == "data/core/");
+            Assert.Equal(1, result.GetProperty("scenarioFileCount").GetInt32());
+            Assert.Equal(1, result.GetProperty("unitFileCount").GetInt32());
+            Assert.Equal("active", Assert.Single(result.GetProperty("scenarioFiles").EnumerateArray()).GetProperty("primaryIds")[0].GetString());
+            Assert.Equal("Alpha Unit", Assert.Single(result.GetProperty("unitFiles").EnumerateArray()).GetProperty("primaryIds")[0].GetString());
+            JsonElement scenarioSummary = Assert.Single(result.GetProperty("scenarios").EnumerateArray());
+            JsonElement unitSummary = Assert.Single(result.GetProperty("units").EnumerateArray());
+            Assert.Equal("active", scenarioSummary.GetProperty("id").GetString());
+            Assert.Equal("Alpha Unit", unitSummary.GetProperty("id").GetString());
+            Assert.Equal("Exact", scenarioSummary.GetProperty("provenance").GetProperty("source").GetProperty("precision").GetString());
+            Assert.Equal("Exact", unitSummary.GetProperty("provenance").GetProperty("source").GetProperty("precision").GetString());
+            Assert.Equal("data/campaigns/Alpha/scenarios/01_Alpha.cfg", scenarioSummary.GetProperty("provenance").GetProperty("source").GetProperty("source").GetString());
+            Assert.Equal("data/campaigns/Alpha/units/Alpha_Unit.cfg", unitSummary.GetProperty("provenance").GetProperty("source").GetProperty("source").GetString());
+            Assert.Contains(result.GetProperty("sourceFiles").EnumerateArray().Select(item => item.GetString()), path => path == "data/core/_main.cfg");
+            Assert.Contains(result.GetProperty("sourceFiles").EnumerateArray().Select(item => item.GetString()), path => path == "data/core/macros/_main.cfg");
             Assert.Equal(result.GetProperty("sourceFiles").GetArrayLength(), result.GetProperty("sourceFileCount").GetInt32());
             Assert.All(result.GetProperty("sourceFiles").EnumerateArray(), item => Assert.False(Path.IsPathRooted(item.GetString())));
         }
@@ -78,6 +99,29 @@ namespace WesnothMarkupLanguage.Test
             JsonElement result = Assert.Single(report.RootElement.GetProperty("campaigns").EnumerateArray());
             Assert.Equal("CampaignMetadata", result.GetProperty("failureKind").GetString());
             Assert.Equal("VAL1001", Assert.Single(result.GetProperty("diagnostics").EnumerateArray()).GetProperty("code").GetString());
+        }
+
+        [Fact]
+        public async Task Scenario_and_unit_file_diagnostics_are_reported_as_child_failures()
+        {
+            using var installation = SyntheticInstallation.Create();
+            installation.WriteCore(string.Empty);
+            installation.WriteCampaign("ChildFailure", Campaign("ChildFailure", "CHILD_FAILURE"));
+            installation.WriteFile(Path.Combine("data", "campaigns", "ChildFailure", "scenarios", "broken.cfg"), "[scenario]\nid=broken\n[/different]\n");
+            installation.WriteFile(Path.Combine("data", "campaigns", "ChildFailure", "units", "ok.cfg"), "[unit_type]\nid=Okay\n[/unit_type]\n");
+            string reportPath = Path.Combine(installation.Root, "report.json");
+
+            int exitCode = await Run(installation.Root, reportPath, "--campaign", "ChildFailure");
+
+            Assert.Equal(1, exitCode);
+            using JsonDocument report = JsonDocument.Parse(File.ReadAllText(reportPath));
+            Assert.Equal(1, report.RootElement.GetProperty("summary").GetProperty("scenarioFilesFailed").GetInt32());
+            Assert.Equal(1, report.RootElement.GetProperty("summary").GetProperty("unitFilesPassed").GetInt32());
+            JsonElement result = Assert.Single(report.RootElement.GetProperty("campaigns").EnumerateArray());
+            Assert.Equal("ChildDiagnostics", result.GetProperty("failureKind").GetString());
+            JsonElement scenario = Assert.Single(result.GetProperty("scenarioFiles").EnumerateArray());
+            Assert.Equal("Failed", scenario.GetProperty("status").GetString());
+            Assert.Contains(scenario.GetProperty("diagnostics").EnumerateArray(), diagnostic => diagnostic.GetProperty("phase").GetString() == "Parser");
         }
 
         [Fact]

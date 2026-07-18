@@ -52,9 +52,9 @@ Filesystem includes are restricted to explicit roots and reparse points are reje
 
 ## Status
 
-Version 2 includes the lossless parser, semantic DOM, canonical writer, POCO serializer, source diagnostics, root-sandboxed resolver, macro expansion, includes, common directives, conditionals, version checks, cycle detection, and resource limits.
+Version 2 includes the lossless parser, semantic DOM, canonical writer, POCO serializer, source diagnostics, root-sandboxed resolver, macro expansion, includes, common directives, conditionals, version checks, cycle detection, resource limits, and structured preprocessing provenance.
 
-As of `2.0.5`, the local campaign validator has been run against a Wesnoth 1.18.7 installation copied under `References/Wesnoth-Installation`. With `NORMAL` difficulty and full `{core/}` preprocessing, 18 of the 19 discovered `_main.cfg` folders validate successfully through preprocessing, parsing, and DOM counting:
+As of `2.0.7`, the local campaign validator has been run against a Wesnoth 1.18.7 installation copied under `References/Wesnoth-Installation`. With `NORMAL` difficulty and full `{core/}` preprocessing, 18 of the 19 discovered `_main.cfg` folders validate successfully through preprocessing, parsing, and DOM counting:
 
 - `Dead_Water`
 - `Delfadors_Memoirs`
@@ -80,6 +80,9 @@ Purposeful gaps:
 - `World_Conquest` is discovered by `-All`, but it is multiplayer/resource-oriented and has no ordinary `[campaign]` metadata/define for this validator workflow. It is reported as `VAL1001` rather than silently skipped.
 - The validator checks WML preprocessing and parsing; it does not execute Lua, evaluate Wesnoth Formula Language, render maps, load images/sounds, or simulate game runtime behavior.
 - The default local survey defines `NORMAL`. Other difficulty symbols can still expose useful compatibility cases, but they are not part of the default coverage claim above.
+- Macro-expanded DOM nodes and diagnostics expose structured provenance through `WmlExpansionProvenance`: logical source, exact source span when known, macro symbol, definition span, invocation span, and nested expansion frames. After macro parameter substitution, generated macro-body text maps to the exact macro definition block rather than pretending every substituted character still has a token-exact body span.
+
+The same `2.0.7` local survey also validates campaign scenarios and campaign units. All 294 discovered scenario `.cfg` files and all 196 discovered campaign unit `.cfg` files parse successfully as raw WML syntax. The full expanded campaign DOMs expose 293 campaign scenarios and 280 campaign-specific unit types; `World_Conquest` remains outside this expanded DOM coverage for the metadata reason above.
 
 ## Test an installed Wesnoth campaign
 
@@ -125,7 +128,7 @@ dotnet run --project WesnothMarkupLanguage.CampaignValidator -- `
   --output artifacts/validation/campaign-validation.json
 ```
 
-Each campaign is preprocessed independently as `{core/}` plus its campaign entry, with its declared campaign symbol and `NORMAL` defined. The default report is `artifacts/validation/campaign-validation.json`. It contains deterministic campaign results, normalized source locations, preprocessing and parser diagnostics, source-map and DOM counts, and one of the statuses `Passed`, `Failed`, or `ResourceLimit`. Expanded WML and local game data are never copied into the report.
+Each campaign is preprocessed independently as `{core/}` plus its campaign entry, with its declared campaign symbol and `NORMAL` defined. The default report is `artifacts/validation/campaign-validation.json`. It contains deterministic campaign results, normalized source locations, structured provenance for diagnostics and summarized expanded scenario/unit nodes, preprocessing and parser diagnostics, source-map and DOM counts, raw parser results for `scenarios/**/*.cfg` and `units/**/*.cfg`, expanded `[scenario]` summaries, expanded campaign-specific `[unit_type]` summaries, and one of the statuses `Passed`, `Failed`, or `ResourceLimit`. Expanded WML and local game data are never copied into the report.
 
 `-All` discovers every folder under `data/campaigns` that contains `_main.cfg`. Folders that are multiplayer/resource-only rather than ordinary single-player campaigns, such as a file set with no matching `[campaign]` metadata, are retained in the report as validation failures with `VAL1001`.
 
